@@ -52,6 +52,7 @@ extern crate zeroize;
 use libc::size_t;
 use std::{error, fmt, ops, ptr};
 use rand::Rng;
+use sha2::{Sha256, Digest};
 
 #[macro_use]
 mod macros;
@@ -690,6 +691,25 @@ impl Secp256k1 {
         } else {
             Ok(())
         }
+    }
+
+    /// generate a generator with a random seed
+    pub fn generate_generator(&self, seed: [u8; 32]) -> ffi::Generator {
+        let mut g = ffi::Generator(constants::GENERATOR_G);
+
+        unsafe {
+            ffi::secp256k1_generator_generate(self.ctx, &mut g, seed.as_ptr());
+        }
+
+        return g;
+    }
+
+    /// generate a generator with a str, and will hash this str as a seed
+    pub fn generate_generator_with_hash(&self, seed: &str) -> ffi::Generator {
+        let mut hasher = Sha256::new();
+        hasher.input(seed);
+
+        self.generate_generator(hasher.result().into())
     }
 }
 
