@@ -415,6 +415,31 @@ impl Secp256k1 {
 		Ok(self.commit_ser(commit_i)?)
 	}
 
+    /// Creates a pedersen commitment from a value and a blinding factor with other generator
+    pub fn commit_with_generator(
+        &self,
+        value: u64,
+        blind: SecretKey,
+        generator: ffi::Generator,
+        ) -> Result<Commitment, Error> {
+        if self.caps != ContextFlag::Commit {
+            return Err(Error::IncapableContext);
+        }
+
+        let mut commit_i = [0; constants::PEDERSEN_COMMITMENT_SIZE_INTERNAL];
+        unsafe {
+            ffi::secp256k1_pedersen_commit(
+                self.ctx,
+                commit_i.as_mut_ptr(),
+                blind.as_ptr(),
+                value,
+                generator.0.as_ptr(),
+                constants::GENERATOR_G.as_ptr(),
+            )
+        };
+        Ok(self.commit_ser(commit_i)?)
+    }
+
 	/// Creates a pedersen commitment from a two blinding factors
 	pub fn commit_blind(&self, value: SecretKey, blind: SecretKey) -> Result<Commitment, Error> {
 		if self.caps != ContextFlag::Commit {
