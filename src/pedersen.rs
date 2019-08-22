@@ -779,6 +779,27 @@ impl Secp256k1 {
         extra_data_in: Option<Vec<u8>>,
         message: Option<ProofMessage>,
     ) -> RangeProof {
+        self.bullet_proof_with_generator(
+            value,
+            blind,
+            rewind_nonce,
+            private_nonce,
+            extra_data_in,
+            message,
+            ffi::Generator(constants::GENERATOR_H),
+        )
+    }
+
+    pub fn bullet_proof_with_generator(
+        &self,
+        value: u64,
+        blind: SecretKey,
+        rewind_nonce: SecretKey,
+        private_nonce: SecretKey,
+        extra_data_in: Option<Vec<u8>>,
+        message: Option<ProofMessage>,
+        generator: ffi::Generator,
+    ) -> RangeProof {
         let mut proof = [0; constants::MAX_PROOF_SIZE];
         let mut plen = constants::MAX_PROOF_SIZE as size_t;
 
@@ -825,7 +846,7 @@ impl Secp256k1 {
                 blind_vec.as_ptr(),
                 commits,
                 1,
-                constants::GENERATOR_H.as_ptr(),
+                generator.0.as_ptr(),
                 n_bits as size_t,
                 rewind_nonce.as_ptr(),
                 private_nonce.as_ptr(),
@@ -973,6 +994,21 @@ impl Secp256k1 {
         proof: RangeProof,
         extra_data_in: Option<Vec<u8>>,
     ) -> Result<ProofRange, Error> {
+        self.verify_bullet_proof_with_generator(
+            commit,
+            proof,
+            extra_data_in,
+            ffi::Generator(constants::GENERATOR_H),
+        )
+    }
+
+    pub fn verify_bullet_proof_with_generator(
+        &self,
+        commit: Commitment,
+        proof: RangeProof,
+        extra_data_in: Option<Vec<u8>>,
+        generator: ffi::Generator,
+    ) -> Result<ProofRange, Error> {
         let n_bits = 64;
 
         let extra_data;
@@ -998,7 +1034,7 @@ impl Secp256k1 {
                 commit.0.as_ptr(),
                 1,
                 n_bits as size_t,
-                constants::GENERATOR_H.as_ptr(),
+                generator.0.as_ptr(),
                 extra_data,
                 extra_data_len as size_t,
             );
