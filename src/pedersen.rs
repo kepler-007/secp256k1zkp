@@ -31,6 +31,7 @@ use super::{Message, Signature};
 use crate::aggsig::ZERO_256;
 use crate::constants;
 use crate::ffi;
+use crate::ffi::Generator;
 use crate::key::{self, PublicKey, SecretKey};
 use rand::{thread_rng, Rng};
 use serde::{de, ser};
@@ -72,7 +73,7 @@ impl_pretty_debug!(CommitmentInternal);
 impl CommitmentInternal {
     /// Uninitialized commitment, use with caution
     pub unsafe fn blank() -> CommitmentInternal {
-        mem::uninitialized()
+        mem::MaybeUninit::uninit().assume_init()
     }
 }
 
@@ -95,7 +96,7 @@ impl Commitment {
 
     /// Uninitialized commitment, use with caution
     unsafe fn blank() -> Commitment {
-        mem::uninitialized()
+        mem::MaybeUninit::uninit().assume_init()
     }
 
     /// Converts a commitment to a public key
@@ -133,7 +134,7 @@ impl Clone for RangeProof {
     fn clone(&self) -> RangeProof {
         unsafe {
             use std::ptr::copy_nonoverlapping;
-            let mut ret: [u8; constants::MAX_PROOF_SIZE] = mem::uninitialized();
+            let mut ret: [u8; constants::MAX_PROOF_SIZE] = mem::MaybeUninit::uninit().assume_init();
             copy_nonoverlapping(
                 self.proof.as_ptr(),
                 ret.as_mut_ptr(),
@@ -171,7 +172,7 @@ impl<'di> de::Visitor<'di> for Visitor {
         V: de::SeqAccess<'di>,
     {
         unsafe {
-            let mut ret: [u8; constants::MAX_PROOF_SIZE] = mem::uninitialized();
+            let mut ret: [u8; constants::MAX_PROOF_SIZE] = mem::MaybeUninit::uninit().assume_init();
             let mut i = 0;
             while let Some(val) = v.next_element()? {
                 ret[i] = val;
@@ -402,21 +403,7 @@ impl Secp256k1 {
 
     /// Creates a pedersen commitment from a value and a blinding factor
     pub fn commit(&self, value: u64, blind: SecretKey) -> Result<Commitment, Error> {
-        if self.caps != ContextFlag::Commit {
-            return Err(Error::IncapableContext);
-        }
-        let mut commit_i = [0; constants::PEDERSEN_COMMITMENT_SIZE_INTERNAL];
-        unsafe {
-            ffi::secp256k1_pedersen_commit(
-                self.ctx,
-                commit_i.as_mut_ptr(),
-                blind.as_ptr(),
-                value,
-                constants::GENERATOR_H.as_ptr(),
-                constants::GENERATOR_G.as_ptr(),
-            )
-        };
-        Ok(self.commit_ser(commit_i)?)
+        self.commit_with_generator(value, blind, Generator(constants::GENERATOR_H))
     }
 
     /// Creates a pedersen commitment from a value and a blinding factor with other generator
@@ -424,7 +411,7 @@ impl Secp256k1 {
         &self,
         value: u64,
         blind: SecretKey,
-        generator: ffi::Generator,
+        generator: Generator,
     ) -> Result<Commitment, Error> {
         if self.caps != ContextFlag::Commit {
             return Err(Error::IncapableContext);
@@ -446,6 +433,16 @@ impl Secp256k1 {
 
     /// Creates a pedersen commitment from a two blinding factors
     pub fn commit_blind(&self, value: SecretKey, blind: SecretKey) -> Result<Commitment, Error> {
+        self.commit_blind_with_generator(value, blind, Generator(constants::GENERATOR_H))
+    }
+
+    /// Creates a pedersen commitment from a two blinding factors with generator
+    pub fn commit_blind_with_generator(
+        &self,
+        value: SecretKey,
+        blind: SecretKey,
+        generator: Generator,
+    ) -> Result<Commitment, Error> {
         if self.caps != ContextFlag::Commit {
             return Err(Error::IncapableContext);
         }
@@ -456,7 +453,7 @@ impl Secp256k1 {
                 commit_i.as_mut_ptr(),
                 blind.as_ptr(),
                 value.as_ptr(),
-                constants::GENERATOR_H.as_ptr(),
+                generator.0.as_ptr(),
                 constants::GENERATOR_G.as_ptr(),
             )
         };
@@ -466,6 +463,16 @@ impl Secp256k1 {
     /// Convenience method to Create a pedersen commitment only from a value,
     /// with a zero blinding factor
     pub fn commit_value(&self, value: u64) -> Result<Commitment, Error> {
+        self.commit_value_with_generator(value, Generator(constants::GENERATOR_H))
+    }
+
+    /// Convenience method to Create a pedersen commitment only from a value,
+    /// with a zero blinding factor
+    pub fn commit_value_with_generator(
+        &self,
+        value: u64,
+        generator: Generator,
+    ) -> Result<Commitment, Error> {
         if self.caps != ContextFlag::Commit {
             return Err(Error::IncapableContext);
         }
@@ -478,7 +485,7 @@ impl Secp256k1 {
                 commit_i.as_mut_ptr(),
                 zblind.as_ptr(),
                 value,
-                constants::GENERATOR_H.as_ptr(),
+                generator.0.as_ptr(),
                 constants::GENERATOR_G.as_ptr(),
             )
         };
@@ -540,7 +547,7 @@ impl Secp256k1 {
         let mut neg = map_vec!(negative, |n| n.as_ptr());
         let mut all = map_vec!(positive, |p| p.as_ptr());
         all.append(&mut neg);
-        let mut ret: [u8; 32] = unsafe { mem::uninitialized() };
+        let mut ret: [u8; 32] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         unsafe {
             assert_eq!(
                 ffi::secp256k1_pedersen_blind_sum(
@@ -559,10 +566,20 @@ impl Secp256k1 {
 
     /// Compute a blinding factor using a switch commitment
     pub fn blind_switch(&self, value: u64, blind: SecretKey) -> Result<SecretKey, Error> {
+        self.blind_switch_with_generator(value, blind, Generator(constants::GENERATOR_H))
+    }
+
+    /// Compute a blinding factor using a switch commitment
+    pub fn blind_switch_with_generator(
+        &self,
+        value: u64,
+        blind: SecretKey,
+        generator: Generator,
+    ) -> Result<SecretKey, Error> {
         if self.caps != ContextFlag::Commit {
             return Err(Error::IncapableContext);
         }
-        let mut ret: [u8; 32] = unsafe { mem::uninitialized() };
+        let mut ret: [u8; 32] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         unsafe {
             assert_eq!(
                 ffi::secp256k1_blind_switch(
@@ -570,7 +587,7 @@ impl Secp256k1 {
                     ret.as_mut_ptr(),
                     blind.as_ptr(),
                     value,
-                    constants::GENERATOR_H.as_ptr(),
+                    generator.0.as_ptr(),
                     constants::GENERATOR_G.as_ptr(),
                     constants::GENERATOR_PUB_J_RAW.as_ptr(),
                 ),
@@ -596,6 +613,28 @@ impl Secp256k1 {
         blind: SecretKey,
         commit: Commitment,
         message: ProofMessage,
+    ) -> RangeProof {
+        self.range_proof_with_generator(
+            min,
+            value,
+            blind,
+            commit,
+            message,
+            Generator(constants::GENERATOR_H),
+        )
+    }
+
+    /// Produces a range proof for the provided value, using min and max
+    /// bounds, relying
+    /// on the blinding factor and commitment.
+    pub fn range_proof_with_generator(
+        &self,
+        min: u64,
+        value: u64,
+        blind: SecretKey,
+        commit: Commitment,
+        message: ProofMessage,
+        generator: Generator,
     ) -> RangeProof {
         let mut retried = false;
         let mut proof = [0; constants::MAX_PROOF_SIZE];
@@ -633,7 +672,7 @@ impl Secp256k1 {
                     message.len(),
                     extra_commit.as_ptr(),
                     0 as size_t,
-                    constants::GENERATOR_H.as_ptr(),
+                    generator.0.as_ptr(),
                 ) == 1
             };
             // break out of the loop immediately on success or
@@ -656,6 +695,16 @@ impl Secp256k1 {
         commit: Commitment,
         proof: RangeProof,
     ) -> Result<ProofRange, Error> {
+        self.verify_range_proof_with_generator(commit, proof, Generator(constants::GENERATOR_H))
+    }
+
+    /// Verify a proof that a committed value is within a range.
+    pub fn verify_range_proof_with_generator(
+        &self,
+        commit: Commitment,
+        proof: RangeProof,
+        generator: Generator,
+    ) -> Result<ProofRange, Error> {
         let mut min: u64 = 0;
         let mut max: u64 = 0;
 
@@ -673,7 +722,7 @@ impl Secp256k1 {
                 proof.plen as size_t,
                 extra_commit.as_ptr(),
                 0 as size_t,
-                constants::GENERATOR_H.as_ptr(),
+                generator.0.as_ptr(),
             ) == 1
         };
 
@@ -692,9 +741,27 @@ impl Secp256k1 {
         proof: RangeProof,
         nonce: SecretKey,
     ) -> ProofInfo {
+        self.rewind_range_proof_with_generator(
+            commit,
+            proof,
+            nonce,
+            Generator(constants::GENERATOR_H),
+        )
+    }
+
+    /// Verify a range proof and rewind the proof to recover information
+    /// sent by its author.
+    pub fn rewind_range_proof_with_generator(
+        &self,
+        commit: Commitment,
+        proof: RangeProof,
+        nonce: SecretKey,
+        generator: Generator,
+    ) -> ProofInfo {
         let mut value: u64 = 0;
-        let mut blind: [u8; 32] = unsafe { mem::uninitialized() };
-        let mut message: [u8; constants::PROOF_MSG_SIZE] = unsafe { mem::uninitialized() };
+        let mut blind: [u8; 32] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut message: [u8; constants::PROOF_MSG_SIZE] =
+            unsafe { mem::MaybeUninit::uninit().assume_init() };
         let mut mlen: usize = constants::PROOF_MSG_SIZE;
         let mut min: u64 = 0;
         let mut max: u64 = 0;
@@ -718,7 +785,7 @@ impl Secp256k1 {
                 proof.plen as size_t,
                 extra_commit.as_ptr(),
                 0 as size_t,
-                constants::GENERATOR_H.as_ptr(),
+                generator.0.as_ptr(),
             ) == 1
         };
 
@@ -786,7 +853,7 @@ impl Secp256k1 {
             private_nonce,
             extra_data_in,
             message,
-            ffi::Generator(constants::GENERATOR_H),
+            Generator(constants::GENERATOR_H),
         )
     }
 
@@ -798,7 +865,7 @@ impl Secp256k1 {
         private_nonce: SecretKey,
         extra_data_in: Option<Vec<u8>>,
         message: Option<ProofMessage>,
-        generator: ffi::Generator,
+        generator: Generator,
     ) -> RangeProof {
         let mut proof = [0; constants::MAX_PROOF_SIZE];
         let mut plen = constants::MAX_PROOF_SIZE as size_t;
@@ -882,6 +949,38 @@ impl Secp256k1 {
         private_nonce: Option<&SecretKey>,
         step: u8, // 0 for last step. 1 for first step.
     ) -> Option<RangeProof> {
+        self.bullet_proof_multisig_with_generator(
+            value,
+            blind,
+            nonce,
+            extra_data_in,
+            message,
+            tau_x,
+            t_one,
+            t_two,
+            commits,
+            private_nonce,
+            step,
+            Generator(constants::GENERATOR_H),
+        )
+    }
+
+    /// Produces a bullet proof for multi-party commitment
+    pub fn bullet_proof_multisig_with_generator(
+        &self,
+        value: u64,
+        blind: SecretKey,
+        nonce: SecretKey,
+        extra_data_in: Option<Vec<u8>>,
+        message: Option<ProofMessage>,
+        tau_x: Option<&mut SecretKey>,
+        t_one: Option<&mut PublicKey>,
+        t_two: Option<&mut PublicKey>,
+        commits: Vec<Commitment>,
+        private_nonce: Option<&SecretKey>,
+        step: u8, // 0 for last step. 1 for first step.
+        generator: Generator,
+    ) -> Option<RangeProof> {
         let last_step = if 0 == step { true } else { false };
         let first_step = if 1 == step { true } else { false };
 
@@ -963,7 +1062,7 @@ impl Secp256k1 {
                 blind_vec.as_ptr(),
                 commit_ptr_vec_ptr,
                 1,
-                constants::GENERATOR_H.as_ptr(),
+                generator.0.as_ptr(),
                 n_bits as size_t,
                 nonce.as_ptr(),
                 private_nonce,
@@ -998,7 +1097,7 @@ impl Secp256k1 {
             commit,
             proof,
             extra_data_in,
-            ffi::Generator(constants::GENERATOR_H),
+            Generator(constants::GENERATOR_H),
         )
     }
 
@@ -1007,7 +1106,7 @@ impl Secp256k1 {
         commit: Commitment,
         proof: RangeProof,
         extra_data_in: Option<Vec<u8>>,
-        generator: ffi::Generator,
+        generator: Generator,
     ) -> Result<ProofRange, Error> {
         let n_bits = 64;
 
@@ -1060,6 +1159,22 @@ impl Secp256k1 {
         proofs: Vec<RangeProof>,
         extra_data_in: Option<Vec<Vec<u8>>>,
     ) -> Result<ProofRange, Error> {
+        self.verify_bullet_proof_multi_with_generator(
+            commits,
+            proofs,
+            extra_data_in,
+            Generator(constants::GENERATOR_H),
+        )
+    }
+
+    /// Verify with bullet proof that a committed value is positive
+    pub fn verify_bullet_proof_multi_with_generator(
+        &self,
+        commits: Vec<Commitment>,
+        proofs: Vec<RangeProof>,
+        extra_data_in: Option<Vec<Vec<u8>>>,
+        generator: Generator,
+    ) -> Result<ProofRange, Error> {
         let n_bits = 64;
 
         let proof_size = if proofs.len() > 0 {
@@ -1083,8 +1198,7 @@ impl Secp256k1 {
             let gen_size = constants::GENERATOR_SIZE;
             let mut value_gen_vec = vec![0; min_len * gen_size];
             for i in 0..min_len {
-                value_gen_vec[i * gen_size..(i + 1) * gen_size]
-                    .clone_from_slice(&constants::GENERATOR_H[..]);
+                value_gen_vec[i * gen_size..(i + 1) * gen_size].clone_from_slice(&generator.0[..]);
             }
             value_gen_vec
         };
@@ -1143,6 +1257,24 @@ impl Secp256k1 {
         extra_data_in: Option<Vec<u8>>,
         proof: RangeProof,
     ) -> Result<ProofInfo, Error> {
+        self.rewind_bullet_proof_with_generator(
+            commit,
+            nonce,
+            extra_data_in,
+            proof,
+            Generator(constants::GENERATOR_H),
+        )
+    }
+
+    /// Rewind a bullet proof to get the value and Blinding factor back out
+    pub fn rewind_bullet_proof_with_generator(
+        &self,
+        commit: Commitment,
+        nonce: SecretKey,
+        extra_data_in: Option<Vec<u8>>,
+        proof: RangeProof,
+        generator: Generator,
+    ) -> Result<ProofInfo, Error> {
         let (extra_data_len, extra_data) = match extra_data_in.as_ref() {
             Some(d) => (d.len(), d.as_ptr()),
             None => (0, ptr::null()),
@@ -1163,7 +1295,7 @@ impl Secp256k1 {
                 proof.plen as size_t,
                 0,
                 commit.as_ptr(),
-                constants::GENERATOR_H.as_ptr(),
+                generator.0.as_ptr(),
                 nonce.as_ptr(),
                 extra_data,
                 extra_data_len as size_t,
