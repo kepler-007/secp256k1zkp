@@ -143,6 +143,28 @@ impl SecretKey {
             }
         }
     }
+
+    #[inline]
+    pub fn to_hex(&self) -> String {
+        let mut hex = String::new();
+        hex.extend(self.0.iter().map(|byte| format!("{:02x?}", byte)));
+        hex
+    }
+
+    #[inline]
+    pub fn from_hex(s: String) -> Result<Self, Error> {
+        if s.len() != constants::SECRET_KEY_SIZE * 2 {
+            return Err(InvalidSecretKey);
+        }
+        let mut value: [u8; constants::SECRET_KEY_SIZE] = [0; constants::SECRET_KEY_SIZE];
+
+        for i in 0..constants::SECRET_KEY_SIZE {
+            value[i] = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap();
+        }
+
+        let secp = Secp256k1::new();
+        SecretKey::from_slice(&secp, &value)
+    }
 }
 
 impl PublicKey {
