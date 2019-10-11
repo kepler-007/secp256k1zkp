@@ -324,6 +324,26 @@ impl PublicKey {
             }
         }
     }
+
+    #[inline]
+    pub fn to_hex(&self) -> String {
+        self.0.to_hex()
+    }
+
+    #[inline]
+    pub fn from_hex(s: String) -> Result<Self, Error> {
+        if s.len() != constants::PUBLIC_KEY_SIZE * 2 {
+            return Err(InvalidPublicKey);
+        }
+        let mut value: [u8; constants::PUBLIC_KEY_SIZE] = [0; constants::PUBLIC_KEY_SIZE];
+
+        for i in 0..constants::PUBLIC_KEY_SIZE {
+            value[i] = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap();
+        }
+
+        let secp = Secp256k1::new();
+        PublicKey::from_slice(&secp, &value)
+    }
 }
 
 impl Decodable for PublicKey {

@@ -100,6 +100,12 @@ impl PublicKey {
     pub unsafe fn blank() -> PublicKey {
         mem::uninitialized()
     }
+
+    pub fn to_hex(&self) -> String {
+        let mut hex = String::new();
+        hex.extend(self.0.iter().map(|byte| format!("{:02x?}", byte)));
+        hex
+    }
 }
 
 /// Library-internal representation of a Secp256k1 signature
