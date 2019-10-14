@@ -477,6 +477,20 @@ impl Message {
             _ => Err(Error::InvalidMessage),
         }
     }
+
+    #[inline]
+    pub fn from_bytes(data: &[u8]) -> Result<Message, Error> {
+        let size = data.len();
+        if size >= constants::MESSAGE_SIZE {
+            let mut ret = [0; constants::MESSAGE_SIZE];
+            ret[..].copy_from_slice(&data[0..constants::MESSAGE_SIZE]);
+            Ok(Message(ret))
+        } else {
+            let mut ret = [0; constants::MESSAGE_SIZE];
+            ret[0..size].copy_from_slice(data);
+            Ok(Message(ret))
+        }
+    }
 }
 
 /// Creates a message from a `MESSAGE_SIZE` byte array
