@@ -66,7 +66,7 @@ pub mod pedersen;
 pub struct RecoveryId(i32);
 
 /// An ECDSA signature
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub struct Signature(ffi::Signature);
 
 impl std::convert::AsRef<[u8]> for Signature {

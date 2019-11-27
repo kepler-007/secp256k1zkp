@@ -114,6 +114,11 @@ pub struct Signature(pub [c_uchar; 64]);
 impl Copy for Signature {}
 impl_array_newtype!(Signature, c_uchar, 64);
 impl_raw_debug!(Signature);
+impl Default for Signature {
+    fn default() -> Self {
+        Signature([0u8; 64])
+    }
+}
 
 /// Library-internal representation of a Secp256k1 signature + recovery ID
 #[repr(C)]
